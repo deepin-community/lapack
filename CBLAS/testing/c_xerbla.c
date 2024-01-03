@@ -5,7 +5,7 @@
 #include "cblas.h"
 #include "cblas_test.h"
 
-void cblas_xerbla(CBLAS_INDEX info, const char *rout, const char *form, ...)
+void cblas_xerbla(CBLAS_INT info, const char *rout, const char *form, ...)
 {
    extern int cblas_lerr, cblas_info, cblas_ok;
    extern int link_xerbla;
@@ -78,7 +78,7 @@ void cblas_xerbla(CBLAS_INDEX info, const char *rout, const char *form, ...)
    }
 
    if (info != cblas_info){
-      printf("***** XERBLA WAS CALLED WITH INFO = %d INSTEAD OF %d in %s *******\n",info, cblas_info, rout);
+      printf("***** XERBLA WAS CALLED WITH INFO = %" CBLAS_IFMT " INSTEAD OF %d in %s *******\n",info, cblas_info, rout);
       cblas_lerr = PASSED;
       cblas_ok = FALSE;
    } else cblas_lerr = FAILED;

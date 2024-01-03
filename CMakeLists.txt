@@ -3,7 +3,7 @@ cmake_minimum_required(VERSION 3.2)
 project(LAPACK Fortran C)
 
 set(LAPACK_MAJOR_VERSION 3)
-set(LAPACK_MINOR_VERSION 10)
+set(LAPACK_MINOR_VERSION 11)
 set(LAPACK_PATCH_VERSION 0)
 set(
   LAPACK_VERSION
@@ -41,6 +41,40 @@ if(_is_coverage_build)
   find_package(codecov)
 endif()
 
+# By default test Fortran compiler complex abs and complex division
+option(TEST_FORTRAN_COMPILER "Test Fortran compiler complex abs and complex division" ON)
+if( TEST_FORTRAN_COMPILER )
+
+  add_executable( test_zcomplexabs ${LAPACK_SOURCE_DIR}/INSTALL/test_zcomplexabs.f )
+  add_custom_target( run_test_zcomplexabs
+    COMMAND test_zcomplexabs 2> test_zcomplexabs.err
+    WORKING_DIRECTORY ${LAPACK_BINARY_DIR}/INSTALL
+    COMMENT "Running test_zcomplexabs in ${LAPACK_BINARY_DIR}/INSTALL with stderr: test_zcomplexabs.err"
+    SOURCES ${LAPACK_SOURCE_DIR}/INSTALL/test_zcomplexabs.f )
+
+  add_executable( test_zcomplexdiv ${LAPACK_SOURCE_DIR}/INSTALL/test_zcomplexdiv.f )
+  add_custom_target( run_test_zcomplexdiv
+    COMMAND test_zcomplexdiv 2> test_zcomplexdiv.err
+    WORKING_DIRECTORY ${LAPACK_BINARY_DIR}/INSTALL
+    COMMENT "Running test_zcomplexdiv in ${LAPACK_BINARY_DIR}/INSTALL with stderr: test_zcomplexdiv.err"
+    SOURCES ${LAPACK_SOURCE_DIR}/INSTALL/test_zcomplexdiv.f )
+
+  add_executable( test_zcomplexmult ${LAPACK_SOURCE_DIR}/INSTALL/test_zcomplexmult.f )
+  add_custom_target( run_test_zcomplexmult
+    COMMAND test_zcomplexmult 2> test_zcomplexmult.err
+    WORKING_DIRECTORY ${LAPACK_BINARY_DIR}/INSTALL
+    COMMENT "Running test_zcomplexmult in ${LAPACK_BINARY_DIR}/INSTALL with stderr: test_zcomplexmult.err"
+    SOURCES ${LAPACK_SOURCE_DIR}/INSTALL/test_zcomplexmult.f )
+
+  add_executable( test_zminMax ${LAPACK_SOURCE_DIR}/INSTALL/test_zminMax.f )
+  add_custom_target( run_test_zminMax
+    COMMAND test_zminMax 2> test_zminMax.err
+    WORKING_DIRECTORY ${LAPACK_BINARY_DIR}/INSTALL
+    COMMENT "Running test_zminMax in ${LAPACK_BINARY_DIR}/INSTALL with stderr: test_zminMax.err"
+    SOURCES ${LAPACK_SOURCE_DIR}/INSTALL/test_zminMax.f )
+    
+endif()
+
 # By default static library
 option(BUILD_SHARED_LIBS "Build shared libraries" OFF)
 
@@ -53,7 +87,7 @@ if(BUILD_INDEX64)
   set(LAPACKELIB "lapacke64")
   set(TMGLIB "tmglib64")
   set(CMAKE_C_FLAGS "${CMAKE_C_FLAGS} -DWeirdNEC -DLAPACK_ILP64 -DHAVE_LAPACK_CONFIG_H")
-  set(CMAKE_Fortran_FLAGS "${CMAKE_Fortran_FLAGS} -fdefault-integer-8")
+  set(FORTRAN_ILP TRUE)
 else()
   set(BLASLIB "blas")
   set(CBLASLIB "cblas")
@@ -91,28 +125,46 @@ include(PreventInBuildInstalls)
 
 # Check if recursive flag exists
 include(CheckFortranCompilerFlag)
-check_fortran_compiler_flag("-recursive" _recursiveFlag)
-check_fortran_compiler_flag("-frecursive" _frecursiveFlag)
-check_fortran_compiler_flag("-Mrecursive" _MrecursiveFlag)
+if(CMAKE_Fortran_COMPILER_ID STREQUAL Flang)
+  check_fortran_compiler_flag("-Mrecursive" _MrecursiveFlag)
+elseif(CMAKE_Fortran_COMPILER_ID STREQUAL GNU)
+  check_fortran_compiler_flag("-frecursive" _frecursiveFlag)
+elseif(CMAKE_Fortran_COMPILER_ID STREQUAL Intel)
+  check_fortran_compiler_flag("-recursive" _recursiveFlag)
+elseif(CMAKE_Fortran_COMPILER_ID STREQUAL XL)
+  check_fortran_compiler_flag("-qrecur" _qrecurFlag)
+elseif(CMAKE_Fortran_COMPILER_ID STREQUAL NAG)
+  check_fortran_compiler_flag("-recursive" _recursiveFlag)
+else()
+  message(WARNING "Fortran local arrays should be allocated on the stack."
+    " Please use a compiler which guarantees that feature."
+    " See https://github.com/Reference-LAPACK/lapack/pull/188 and references therein.")
+endif()
 
 # Add recursive flag
-if(_recursiveFlag)
-  string(REGEX MATCH "-recursive" output_test <string> "${CMAKE_Fortran_FLAGS}")
+if(_MrecursiveFlag)
+  string(REGEX MATCH "-Mrecursive" output_test <string> "${CMAKE_Fortran_FLAGS}")
   if(NOT output_test)
-    set(CMAKE_Fortran_FLAGS "${CMAKE_Fortran_FLAGS} -recursive"
+    set(CMAKE_Fortran_FLAGS "${CMAKE_Fortran_FLAGS} -Mrecursive"
       CACHE STRING "Recursive flag must be set" FORCE)
   endif()
 elseif(_frecursiveFlag)
   string(REGEX MATCH "-frecursive" output_test <string> "${CMAKE_Fortran_FLAGS}")
   if(NOT output_test)
     set(CMAKE_Fortran_FLAGS "${CMAKE_Fortran_FLAGS} -frecursive"
-    CACHE STRING "Recursive flag must be set" FORCE)
+      CACHE STRING "Recursive flag must be set" FORCE)
   endif()
-elseif(_MrecursiveFlag)
-  string(REGEX MATCH "-Mrecursive" output_test <string> "${CMAKE_Fortran_FLAGS}")
+elseif(_recursiveFlag)
+  string(REGEX MATCH "-recursive" output_test <string> "${CMAKE_Fortran_FLAGS}")
   if(NOT output_test)
-    set(CMAKE_Fortran_FLAGS "${CMAKE_Fortran_FLAGS} -Mrecursive"
-    CACHE STRING "Recursive flag must be set" FORCE)
+    set(CMAKE_Fortran_FLAGS "${CMAKE_Fortran_FLAGS} -recursive"
+      CACHE STRING "Recursive flag must be set" FORCE)
+  endif()
+elseif(_qrecurFlag)
+  string(REGEX MATCH "-qrecur" output_test <string> "${CMAKE_Fortran_FLAGS}")
+  if(NOT output_test)
+    set(CMAKE_Fortran_FLAGS "${CMAKE_Fortran_FLAGS} -qrecur"
+      CACHE STRING "Recursive flag must be set" FORCE)
   endif()
 endif()
 
@@ -121,7 +173,7 @@ if(UNIX)
     set(CMAKE_Fortran_FLAGS "${CMAKE_Fortran_FLAGS} -fp-model strict")
   endif()
   if(CMAKE_Fortran_COMPILER_ID STREQUAL XL)
-    set(CMAKE_Fortran_FLAGS "${CMAKE_Fortran_FLAGS} -qnosave -qstrict=none")
+    set(CMAKE_Fortran_FLAGS "${CMAKE_Fortran_FLAGS} -qnosave -qstrict")
   endif()
 # Delete libmtsk in linking sequence for Sun/Oracle Fortran Compiler.
 # This library is not present in the Sun package SolarisStudio12.3-linux-x86-bin
@@ -205,7 +257,7 @@ CheckLAPACKCompilerFlags()
 # Check second function
 
 include(CheckTimeFunction)
-set(NONE ${TIME_FUNC})
+set(TIME_FUNC NONE)
 CHECK_TIME_FUNCTION(NONE TIME_FUNC)
 CHECK_TIME_FUNCTION(INT_CPU_TIME TIME_FUNC)
 CHECK_TIME_FUNCTION(EXT_ETIME TIME_FUNC)
@@ -237,6 +289,7 @@ if(NOT (BUILD_SINGLE OR BUILD_DOUBLE OR BUILD_COMPLEX OR BUILD_COMPLEX16))
   Please enable at least one of these:
   BUILD_SINGLE, BUILD_DOUBLE, BUILD_COMPLEX, BUILD_COMPLEX16.")
 endif()
+
 
 # --------------------------------------------------
 # Subdirectories that need to be processed
@@ -375,9 +428,8 @@ endif()
 set(LAPACK_INSTALL_EXPORT_NAME ${LAPACK_INSTALL_EXPORT_NAME_CACHE})
 unset(LAPACK_INSTALL_EXPORT_NAME_CACHE)
 
-if(LAPACKE)
-  add_subdirectory(LAPACKE)
-endif()
+add_subdirectory(LAPACKE)
+
 
 #-------------------------------------
 # BLAS++ / LAPACK++
@@ -399,8 +451,8 @@ if (BLAS++)
   include(ExternalProject)
   ExternalProject_Add(blaspp
 	  URL https://bitbucket.org/icl/blaspp/downloads/blaspp-2020.10.02.tar.gz
-	  CONFIGURE_COMMAND ${CMAKE_COMMAND} -E env LIBRARY_PATH=${CMAKE_BINARY_DIR}/lib LD_LIBRARY_PATH=${PROJECT_BINARY_DIR}/lib ${CMAKE_COMMAND} -DCMAKE_INSTALL_PREFIX=${PROJECT_BINARY_DIR} -DCMAKE_INSTALL_LIBDIR=lib -DBUILD_SHARED_LIBS=${BUILD_SHARED_LIBS} ${PROJECT_BINARY_DIR}/blaspp-prefix/src/blaspp
-	  BUILD_COMMAND ${CMAKE_COMMAND} -E env LIBRARY_PATH=${PROJECT_BINARY_DIR}/lib LIB_SUFFIX="" make
+	  CONFIGURE_COMMAND ${CMAKE_COMMAND} -E env LIBRARY_PATH=$ENV{LIBRARY_PATH}:${CMAKE_BINARY_DIR}/lib LD_LIBRARY_PATH=$ENV{LD_LIBRARY_PATH}:${PROJECT_BINARY_DIR}/lib ${CMAKE_COMMAND} -DCMAKE_INSTALL_PREFIX=${PROJECT_BINARY_DIR} -DCMAKE_INSTALL_LIBDIR=lib -DBUILD_SHARED_LIBS=${BUILD_SHARED_LIBS} ${PROJECT_BINARY_DIR}/blaspp-prefix/src/blaspp
+	  BUILD_COMMAND ${CMAKE_COMMAND} -E env LIBRARY_PATH=$ENV{LIBRARY_PATH}:${PROJECT_BINARY_DIR}/lib LIB_SUFFIX="" make
 	  INSTALL_COMMAND make PREFIX=${PROJECT_BINARY_DIR} LIB_SUFFIX="" install
 	  )
   ExternalProject_Add_StepDependencies(blaspp build ${BLAS_LIBRARIES})
@@ -412,16 +464,16 @@ if (LAPACK++)
   if (BUILD_SHARED_LIBS)
   ExternalProject_Add(lapackpp
 	  URL https://bitbucket.org/icl/lapackpp/downloads/lapackpp-2020.10.02.tar.gz
-	  CONFIGURE_COMMAND ${CMAKE_COMMAND} -E env LIBRARY_PATH=${CMAKE_BINARY_DIR}/lib LD_LIBRARY_PATH=${PROJECT_BINARY_DIR}/lib ${CMAKE_COMMAND} -DCMAKE_INSTALL_PREFIX=${PROJECT_BINARY_DIR} -DCMAKE_INSTALL_LIBDIR=lib -DLAPACK_LIBRARIES=${LAPACK_LIBRARIES} -DBUILD_SHARED_LIBS=${BUILD_SHARED_LIBS}  ${PROJECT_BINARY_DIR}/lapackpp-prefix/src/lapackpp
-	  BUILD_COMMAND ${CMAKE_COMMAND} -E env LIBRARY_PATH=${PROJECT_BINARY_DIR}/lib LIB_SUFFIX="" make
+	  CONFIGURE_COMMAND ${CMAKE_COMMAND} -E env LIBRARY_PATH=$ENV{LIBRARY_PATH}:${CMAKE_BINARY_DIR}/lib LD_LIBRARY_PATH=$ENV{LD_LIBRARY_PATH}:${PROJECT_BINARY_DIR}/lib ${CMAKE_COMMAND} -DCMAKE_INSTALL_PREFIX=${PROJECT_BINARY_DIR} -DCMAKE_INSTALL_LIBDIR=lib -DLAPACK_LIBRARIES=${LAPACK_LIBRARIES} -DBUILD_SHARED_LIBS=${BUILD_SHARED_LIBS}  ${PROJECT_BINARY_DIR}/lapackpp-prefix/src/lapackpp
+	  BUILD_COMMAND ${CMAKE_COMMAND} -E env LIBRARY_PATH=$ENV{LIBRARY_PATH}:${PROJECT_BINARY_DIR}/lib LIB_SUFFIX="" make
 	  INSTALL_COMMAND make PREFIX=${PROJECT_BINARY_DIR} LIB_SUFFIX="" install
 	  )
   else ()
 # FIXME this does not really work as the libraries list gets converted to a semicolon-separated list somewhere in the lapack++ build files
   ExternalProject_Add(lapackpp
 	  URL https://bitbucket.org/icl/lapackpp/downloads/lapackpp-2020.10.02.tar.gz
-	  CONFIGURE_COMMAND env LIBRARY_PATH=${CMAKE_BINARY_DIR}/lib LD_LIBRARY_PATH=${PROJECT_BINARY_DIR}/lib ${CMAKE_COMMAND} -DCMAKE_INSTALL_PREFIX=${PROJECT_BINARY_DIR} -DCMAKE_INSTALL_LIBDIR=lib -DLAPACK_LIBRARIES="${PROJECT_BINARY_DIR}/lib/liblapack.a -lgfortran"  -DBUILD_SHARED_LIBS=${BUILD_SHARED_LIBS}  ${PROJECT_BINARY_DIR}/lapackpp-prefix/src/lapackpp
-	  BUILD_COMMAND env LIBRARY_PATH=${PROJECT_BINARY_DIR}/lib LIB_SUFFIX="" make
+	  CONFIGURE_COMMAND env LIBRARY_PATH=$ENV{LIBRARY_PATH}:${CMAKE_BINARY_DIR}/lib LD_LIBRARY_PATH=$ENV{LD_LIBRARY_PATH}:${PROJECT_BINARY_DIR}/lib ${CMAKE_COMMAND} -DCMAKE_INSTALL_PREFIX=${PROJECT_BINARY_DIR} -DCMAKE_INSTALL_LIBDIR=lib -DLAPACK_LIBRARIES="${PROJECT_BINARY_DIR}/lib/liblapack.a -lgfortran"  -DBUILD_SHARED_LIBS=${BUILD_SHARED_LIBS}  ${PROJECT_BINARY_DIR}/lapackpp-prefix/src/lapackpp
+	  BUILD_COMMAND env LIBRARY_PATH=$ENV{LIBRARY_PATH}:${PROJECT_BINARY_DIR}/lib LIB_SUFFIX="" make
 	  INSTALL_COMMAND make PREFIX=${PROJECT_BINARY_DIR} LIB_SUFFIX="" install
   )
   endif()
